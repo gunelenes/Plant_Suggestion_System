@@ -1,0 +1,172 @@
+{
+  "meta_rules": [
+    {
+      "condition": {
+        "environment_type": "Indoor"
+      },
+      "suggested_types": [
+        "air_purifying",
+        "shade_tolerant"
+      ]
+    },
+    {
+      "condition": {
+        "has_child": "Yes"
+      },
+      "excluded_types": [
+        "toxic"
+      ]
+    },
+    {
+      "condition": {
+        "area_size": "Mini"
+      },
+      "suggested_types": [
+        "compact",
+        "succulent"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "conditions": {
+        "sunlight_need": "Can live in shade",
+        "has_pet": "Yes"
+      },
+      "suggested_plant": "ZZ Plant"
+    },
+    {
+      "conditions": {
+        "sunlight_need": "Bright indirect light",
+        "watering_frequency": "Weekly"
+      },
+      "suggested_plant": "Peace Lily"
+    },
+    {
+      "conditions": {
+        "climate_type": "Spring",
+        "has_child": "Yes",
+        "watering_frequency": "Every 2-3 days"
+      },
+      "suggested_plant": "Spider Plant"
+    },
+    {
+      "conditions": {
+        "area_size": "Mini",
+        "watering_frequency": "Monthly",
+        "environment_type": "Indoor"
+      },
+      "suggested_plant": "Air Plant (Tillandsia)"
+    },
+    {
+      "conditions": {
+        "climate_type": "All seasons",
+        "sunlight_need": "6+ hours",
+        "has_pet": "No"
+      },
+      "suggested_plant": "Areca Palm"
+    },
+    {
+      "conditions": {
+        "sunlight_need": "1-2 hours daily",
+        "environment_type": "Outdoor",
+        "watering_frequency": "Bi-weekly"
+      },
+      "suggested_plant": "Aloe Vera"
+    },
+    {
+      "conditions": {
+        "sunlight_need": "Bright indirect light",
+        "has_child": "Yes",
+        "has_pet": "No"
+      },
+      "suggested_plant": "Boston Fern"
+    },
+    {
+      "conditions": {
+        "has": "child_No",
+        "|   suggested": "plant_Crown of Thorns",
+        "|   |   suggested": "plant_Barrel Cactus",
+        "|   |   |   sunlight": "need_Bright indirect light",
+        "|   |   |   |   suggested": "plant_Hops"
+      },
+      "suggested_plant": "stephanotis Floribuda"
+    },
+    {
+      "conditions": {
+        "has": "child_No",
+        "|   suggested": "plant_Crown of Thorns",
+        "|   |   suggested": "plant_Barrel Cactus",
+        "|   |   |   |   suggested": "plant_Bamboo Orchid"
+      },
+      "suggested_plant": "Apple Tree"
+    },
+    {
+      "conditions": {
+        "|   watering": "frequency_Daily",
+        "|   |   fertilizer": "frequency_Never needed",
+        "|   |   |   suggested": "plant_Cilantro"
+      },
+      "suggested_plant": "Aquilegia (Columbine)"
+    },
+    {
+      "conditions": {
+        "|   watering": "frequency_Daily",
+        "|   |   fertilizer": "frequency_Never needed"
+      },
+      "suggested_plant": "Syngonum Curvy"
+    },
+    {
+      "conditions": {
+        "|   watering": "frequency_Daily",
+        "|   |   |   sunlight": "need_1-2 hours daily",
+        "|   |   |   |   suggested": "plant_Croton"
+      },
+      "suggested_plant": "pachira aquatica"
+    },
+    {
+      "conditions": {
+        "|   |   suggested": "plant_Umbrella Tree",
+        "|   |   |   suggested": "plant_Christmas Cactus",
+        "|   |   |   |   pesticide": "frequency_Never needed"
+      },
+      "suggested_plant": "Kurdele çiçeği"
+    },
+    {
+      "conditions": {
+        "|   |   suggested": "plant_Umbrella Tree",
+        "|   |   |   suggested": "plant_Christmas Cactus"
+      },
+      "suggested_plant": "1"
+    }
+  ],
+  "frames": {
+    "succulent": [
+      "Aloe Vera",
+      "Echeveria",
+      "Haworthia",
+      "Hen and Chicks"
+    ],
+    "air_purifying": [
+      "Snake Plant (Sansevieria)",
+      "Peace Lily",
+      "Boston Fern",
+      "Areca Palm"
+    ],
+    "toxic": [
+      "Dieffenbachia",
+      "Oleander",
+      "Pothos (Devil's Ivy)"
+    ],
+    "compact": [
+      "Air Plant (Tillandsia)",
+      "Mini Cactus",
+      "Baby Tears"
+    ],
+    "shade_tolerant": [
+      "ZZ Plant",
+      "Cast Iron Plant",
+      "Parlor Palm"
+    ]
+  }
+}
