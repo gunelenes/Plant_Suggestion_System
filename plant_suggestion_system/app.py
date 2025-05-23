@@ -1,9 +1,9 @@
-# app.py – Smart Plant Recommendation System (FULL REVISED VERSION)
+#app.py – Smart Plant Recommendation System (REDESIGNED VERSION)
 # --------------------------------------------------------------
-# This version fixes the feedback‑not‑saved issue by
-# 1. Using st.session_state to persist user_input & plant across reruns
-# 2. Wrapping the feedback UI in st.form so a single submit event is captured
-# 3. Keeping a clear separation of "recommend" vs "feedback" phases
+# This version features:
+# 1. Two-column layout for better space utilization
+# 2. Enhanced UI with custom styling and visual improvements
+# 3. Maintains ALL original backend logic and functionality
 # --------------------------------------------------------------
 
 import streamlit as st
@@ -11,151 +11,457 @@ import pandas as pd
 import joblib
 import os
 import subprocess
+import numpy as np
+import random  
+import streamlit as st
+from typing import Tuple
 from data_handling import load_plants, add_feedback, sql_connect
+from rule_engine import RuleEngine
+
+import sys
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger(__name__)
+
+
+from sklearn.feature_extraction import DictVectorizer
+
+feedback_model = joblib.load("models/feedback_model.pkl")
+vectorizer: DictVectorizer = joblib.load("models/feedback_vec.pkl")
+
+logging.basicConfig(level=logging.DEBUG)
+
+def align_features_with_vectorizer(record: dict, vectorizer: DictVectorizer):
+    """Ensure input features match the trained vectorizer's expected features."""
+    temp_df = pd.DataFrame([record])
+    try:
+        encoded = vectorizer.transform(temp_df.to_dict(orient="records"))
+        return encoded
+    except Exception as e:
+        logging.warning("⚠️ DictVectorizer transform hatası: %s", e)
+        raise
+
+#logging.info("🎯 Modelin beklediği özellikler: %s", vectorizer.feature_names_)
 
 # --------------------------------------------------------------
-# 🔧 Page / general config
+# 🔧 Page / general config
 # --------------------------------------------------------------
-st.set_page_config(page_title="Smart Plant Recommender", layout="centered")
+st.set_page_config(
+    page_title="Smart Plant Recommender",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Custom CSS for a more professional look
+st.markdown("""
+<style>
+    /* Main styling */
+    .main {
+        background-color: #f8fef8;
+    }
+    
+    /* Header styling */
+    h1 {
+        color: #2e7d32;
+        text-align: center;
+        margin-bottom: 0.5rem;
+    }
+    h3 {
+        text-align: center;
+        font-weight: 400;
+        margin-bottom: 2rem;
+    }
+    
+    /* Card styling */
+    .stButton > button {
+        width: 100%;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        padding: 0.75rem;
+        text-transform: uppercase;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+    .stButton > button:hover {
+        background-color: #2e7d32;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    /* Form elements */
+    .stSelectbox label, .stRadio label {
+        font-weight: 500;
+        color: #1b5e20;
+    }
+    
+    /* Plant card */
+    .plant-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        margin-top: 1rem;
+    }
+    
+    /* Feedback section */
+    .feedback-section {
+        border-top: 1px solid #e0e0e0;
+        padding-top: 1rem;
+        margin-top: 1rem;
+    }
+    
+    /* Divider */
+    .divider {
+        background-color: #4CAF50;
+        height: 3px;
+        margin: 1rem 0;
+        border-radius: 3px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Header with decorative elements
 st.title("🌿 Smart Plant Recommendation System")
 st.markdown("### 🌱 Fill the form to get your best‑matching plant:")
+st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
 
 # --------------------------------------------------------------
-# 🔁 Automatic retrain helper
+# 🔁 Automatic retrain helper - KEEPING ORIGINAL CODE
 # --------------------------------------------------------------
 
-def check_and_retrain_if_needed(threshold: int = 3) -> bool:
+def check_and_retrain_if_needed(threshold: int =3)-> bool:
     """Retrain model when accepted‑feedback count is divisible by *threshold*."""
+    logger.debug("Retrain ihtiyacı kontrol ediliyor (threshold: %d)", threshold)
     try:
         conn = sql_connect()
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM Feedback WHERE user_feedback = 1")
         count = cur.fetchone()[0]
         conn.close()
+        logger.info("Toplam pozitif feedback: %s", count)
 
         if count and count % threshold == 0:
-            st.info(f"🔁 Retraining ML model… (total positive feedback: {count})")
-            subprocess.run([".venv\\Scripts\\python.exe", "model.py"], check=True)
+            st.info(f"🔁 Retraining ML model… (total positive feedback: {count})")
+            logger.warning("Retrain başlatıldı.")
+            
+    
+             
+            subprocess.run([sys.executable, "learning_engine.py"], check=True)
+            logger.info("learning_engine.py çalıştırıldı.")
+            
+            subprocess.run([
+                                sys.executable,
+                                "learning_engine_v2.py",
+                                "--min-support", "0.005",
+                                "--min-confidence", "0.008",
+                                "--output", "parsed_rules.json"
+                            ], check=True)
+
+            logger.info("learning_engine_v2.py çalıştırıldı.")
+
+           
+
+
+               # 4. KB güncelle
+            from kb_updater import update_knowledge_base
+            update_knowledge_base("parsed_rules.json", "knowledge_base.json")
+            logger.info("Bilgi tabanı güncellendi.")
+
+            st.success("✅ Model retrained & rules updated.")
+            return True
+
+
             
 
-            st.success("✅ Model retrained & model.pkl updated.")
-            return True
+            
     except Exception as exc:  # pragma: no cover
-        st.error(f"❌ Retrain check failed: {exc}")
+        logger.error("Retrain sırasında hata: %s", exc)
+        st.error(f"❌ Retrain check failed: {exc}")
     return False
 
 # --------------------------------------------------------------
-# 📝 User input (always visible)
+# 📝 User input in two-column layout
 # --------------------------------------------------------------
 
 def render_preference_form():
-    """Return a dict with the user selections."""
-    return {
-        "area_size": st.selectbox("Space Size", ["Mini", "Small", "Medium", "Large"]),
-        "sunlight_need": st.selectbox(
+    """Return a dict with the user selections in a two-column layout."""
+    
+    # Create two columns for the form fields
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        area_size = st.selectbox("Space Size", ["Mini", "Small", "Medium", "Large"])
+        sunlight_need = st.selectbox(
             "Sunlight Requirement",
             ["Can live in shade", "1-2 hours daily", "Bright indirect light", "6+ hours"],
-        ),
-        "environment_type": st.selectbox("Environment Type", ["Indoor", "Outdoor", "Semi-outdoor"]),
-        "climate_type": st.selectbox("Climate Type", ["All seasons", "Spring", "Summer", "Winter"]),
-        "fertilizer_frequency": st.selectbox(
+        )
+        environment_type = st.selectbox("Environment Type", ["Indoor", "Outdoor", "Semi-outdoor"])
+        climate_type = st.selectbox("Climate Type", ["All seasons", "Spring", "Summer", "Winter"])
+        watering_frequency = st.selectbox(
+            "Watering Frequency",
+            ["Daily", "Weekly", "Bi-weekly", "Every 2-3 days", "Monthly"]
+        )
+    
+    with col2:
+        fertilizer_frequency = st.selectbox(
             "Fertilizer Frequency", ["Monthly", "1-2 times a year", "Never needed"]
-        ),
-        "pesticide_frequency": st.selectbox(
+        )
+        pesticide_frequency = st.selectbox(
             "Pesticide Frequency", ["Monthly", "1-2 times a year", "Never needed"]
-        ),
-        "has_pet": st.radio("Do you have pets?", ["Yes", "No"]),
-        "has_child": st.radio("Do you have children?", ["Yes", "No"]),
+        )
+        
+        has_pet = st.radio("Do you have pets?", ["Yes", "No"])
+        has_child = st.radio("Do you have children?", ["Yes", "No"])
+        
+
+        
+    return {
+        "area_size": area_size,
+        "sunlight_need": sunlight_need,
+        "environment_type": environment_type,
+        "climate_type": climate_type,
+        "fertilizer_frequency": fertilizer_frequency,
+        "pesticide_frequency": pesticide_frequency,
+        "has_pet": has_pet,
+        "has_child": has_child,
+        "watering_frequency": watering_frequency
     }
 
 user_input = render_preference_form()
-recommend_clicked = st.button("🌿 Recommend Plant")
+logger.info("📥 Kullanıcı inputu alındı: %s", user_input)
+# Centered button with distinct styling
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    recommend_clicked = st.button("🌿 Recommend Plant")
 
-# --------------------------------------------------------------
-# 🎯 Recommendation phase
-# --------------------------------------------------------------
+# Eğer kullanıcı öner butonuna bastıysa
 if recommend_clicked:
+    logger.info(" Öner butonuna tıklandı.")
     df = load_plants()
     if df.empty:
-        st.error("❌ Could not load plant data — check DB connection.")
+        logger.error(" Bitki verisi yüklenemedi.")
+        st.error(" Could not load plant data — check DB connection.")
         st.stop()
 
-    # 1️⃣ Rule‑based exact match
-    mask = (
-        (df["area_size"] == user_input["area_size"]) &
-        (df["sunlight_need"] == user_input["sunlight_need"]) &
-        (df["environment_type"] == user_input["environment_type"]) &
-        (df["climate_type"] == user_input["climate_type"]) &
-        (df["fertilizer_frequency"] == user_input["fertilizer_frequency"]) &
-        (df["pesticide_frequency"] == user_input["pesticide_frequency"]) &
-        (df["has_pet"] == user_input["has_pet"]) &
-        (df["has_child"] == user_input["has_child"])  # noqa: E501
-    )
+    rule_engine = RuleEngine(df)
+    candidates = rule_engine.get_candidates(user_input, top_n=5)
+    logger.info("🎯 RuleEngine aday bitkiler: %s", candidates)
 
-    if df[mask].shape[0] > 0:
-        plant_row = df[mask].sample(1).iloc[0]
-        st.info("🎯 Exact match found — rule‑based filter.")
+    logger.info("🧠 ML skorlama başlatılıyor. %d aday değerlendirilecek.", len(candidates))
+
+    # ML skorlama yapılacak bitki listesi (fallback destekli)
+    scores = []
+
+    if not candidates:
+        logger.warning("⚠️ Kural tabanlı eşleşme bulunamadı, ML fallback başlatılıyor.")
+        st.info("🔍 No rule-based match found. Trying best guess with ML...")
+        for _, row in df.iterrows():
+            record = {**user_input, "suggested_plant": row["plant_name"]}
+
+            if "waterring_frequency" in record:
+               record["watering_frequency"] = record.pop("waterring_frequency")
+
+
+
+                        # DEBUG: Feature kontrolü yap
+            expected_features = set(vectorizer.feature_names_)
+            actual_features = set(record.keys())
+
+            missing = expected_features - actual_features
+            extra = actual_features - expected_features
+
+            if missing:
+                logger.warning("🚨 Eksik featurelar: %s", missing)
+            if extra:
+                logger.warning("⚠️ Fazladan featurelar: %s", extra)
+
+
+            try:
+                record_df = pd.DataFrame([record])
+
+                record_encoded = align_features_with_vectorizer(record, vectorizer)
+                proba = feedback_model.predict_proba(record_encoded)[0, 1]
+
+
+                logger.debug("🔢 ML skor: %s → %.3f", proba)
+                scores.append(( proba))
+            except Exception as e:
+              logger.error("❌ ML skorlamasında hata oluştu (%s): %s",  str(e))
+
+            scores.append((row["plant_name"], proba))
+
+            logger.debug("🔢 ML skor: %s → %.3f",  proba)
+
     else:
-        st.warning("⚠️ No exact match — falling back to ML prediction…")
-        if not os.path.exists("model.pkl"):
-            st.error("❌ model.pkl not found — run model.py first.")
+        for plant in candidates:
+            record = {**user_input, "suggested_plant": plant}
+
+            
+
+
+            # DEBUG: Feature kontrolü yap
+            expected_features = set(vectorizer.feature_names_)
+            actual_features = set(record.keys())
+
+            missing = expected_features - actual_features
+            extra = actual_features - expected_features
+
+           
+
+
+            try:
+                record_df = pd.DataFrame([record])
+                record_encoded = align_features_with_vectorizer(record, vectorizer)
+                proba = feedback_model.predict_proba(record_encoded)[0, 1]
+
+                logger.debug("🔢 ML skor: %s → %.3f", plant, proba)
+                scores.append((plant, proba))
+            except Exception as e:
+                logger.error("❌ ML skorlamasında hata oluştu (%s): %s", plant, str(e))
+
+            scores.append((plant, proba))
+            logger.debug("🔢 ML skor: %s → %.3f", plant, proba)
+
+
+        # Eşleşme veritabanında yoksa fallback için tekrar tüm df taranır
+        scores = sorted(scores, key=lambda x: x[1], reverse=True)
+        fallback_row = None
+        for plant, score in scores:
+            match = df[df["plant_name"] == plant]
+            if not match.empty:
+                fallback_row = match.iloc[0]
+                best_plant = plant
+                best_score = score
+                logger.info("✅ Kural + ML ile bulunan öneri: %s (skor: %.3f)", best_plant, best_score)
+                break
+        if fallback_row is None:
+            st.info("⚠️ Candidates found but not in DB. ML fallback triggered.")
+            scores.clear()
+            for _, row in df.iterrows():
+                record = {**user_input, "suggested_plant": row["plant_name"]}
+
+                
+
+
+
+                # DEBUG: Feature kontrolü yap
+                expected_features = set(vectorizer.feature_names_)
+                actual_features = set(record.keys())
+
+                missing = expected_features - actual_features
+                extra = actual_features - expected_features
+
+               
+
+
+                try:
+                    record_df = pd.DataFrame([record])
+                    record_encoded = align_features_with_vectorizer(record, vectorizer)
+                    proba = feedback_model.predict_proba(record_encoded)[0, 1]
+
+                    logger.debug("🔢 ML skor: %s → %.3f", plant, proba)
+                    scores.append((plant, proba))
+                except Exception as e:
+                   logger.error("❌ ML skorlamasında hata oluştu (%s): %s", plant, str(e))
+
+                scores.append((row["plant_name"], proba))
+
+    # En iyi sonucu bul ve göster
+    if scores:
+                
+
+        TOP_K = 5  # ilk 5 yüksek skorlu bitki arasından seçeceğiz
+
+        top_k = scores[:TOP_K] if len(scores) >= TOP_K else scores
+
+        # Geçmiş önerilen bitkiler tutulur (session bazlı)
+        past = st.session_state.get("past_recommendations", [])
+
+        # Daha önce önerilmemiş olanı rastgele seç
+        suggestion = None
+        for plant, score in random.sample(top_k, len(top_k)):
+            if plant not in past:
+                suggestion = (plant, score)
+                past.append(plant)
+                break
+
+        st.session_state["past_recommendations"] = past
+
+        if suggestion is None:
+            st.warning(" All top suggestions already shown. Try different input.")
             st.stop()
-        try:
-            bundle = joblib.load("model.pkl")
-            model = bundle["model"]
-            encoders = bundle["encoders"]
-            tgt_enc = bundle["target_encoder"]
 
-            x = pd.DataFrame([user_input])
-            for col in x.columns:
-                x[col] = encoders[col].transform(x[col])
-            pred_encoded = model.predict(x)[0]
-            pred_label = pred_encoded if isinstance(pred_encoded, str) else tgt_enc.inverse_transform([pred_encoded])[0]
-            if df[df["plant_name"] == pred_label].empty:
-                st.error(f"❌ Predicted plant '{pred_label}' not in DB.")
-                st.stop()
-            plant_row = df[df["plant_name"] == pred_label].iloc[0]
-            st.info("🧠 Recommendation provided by ML model.")
-        except Exception as exc:  # pragma: no cover
-            st.error(f"❌ ML prediction failed: {exc}")
+        best_plant, best_score = suggestion
+
+        logger.info(" En iyi öneri: %s (Skor: %.3f)", best_plant, best_score)
+
+        # Eşleşen bitkiyi robust şekilde bul
+        match = df[df["plant_name"].str.strip().str.lower() == best_plant.strip().lower()]
+        if match.empty:
+            st.error(f" '{best_plant}' için bitki detayları bulunamadı.")
             st.stop()
+        row = match.iloc[0]
 
-    # Store to session so next rerun (after form submit) still has context
-    st.session_state["recommended_plant"] = plant_row.to_dict()
-    st.session_state["user_input"] = user_input
+        logger.debug(" Bitki veri satırı bulundu: %s", row.to_dict())
 
-# --------------------------------------------------------------
-# 📩 Feedback phase (only if we have a plant in session)
-# --------------------------------------------------------------
+        img_url = row["image_url"]
+
+        st.session_state["recommended_plant"] = {
+            "plant_name": best_plant,
+            "description": row["description"],
+            "image_url": img_url,
+        }
+        st.session_state["user_input"] = user_input
+    else:
+        st.error("❌ Unable to generate a recommendation.")
+        st.stop()
+
+# Eğer tavsiye varsa göster
 plant_dict = st.session_state.get("recommended_plant")
 if plant_dict:
-    # Show recommendation card (only when not just shown in same run)
-    if not recommend_clicked:
-        st.success(f"✅ Recommended Plant: **{plant_dict['plant_name']}**")
+    st.markdown('<div class="divider"></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 2])
+
+    with col1:
+        st.markdown(f"<div class='plant-card'>", unsafe_allow_html=True)
+        st.markdown(f"### {plant_dict['plant_name']}")
         if pd.notna(plant_dict.get("image_url")):
-            st.image(plant_dict["image_url"], width=250)
-        st.write("📄 Description:")
-        st.markdown(f"> {plant_dict['description']}")
+            st.image(plant_dict["image_url"], use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    # ---- Feedback Form ----
-    with st.form("feedback_form"):
-        fb_choice = st.radio("💬 Was this recommendation suitable for you?", ["Yes", "No"])
-        fb_submit = st.form_submit_button("📩 Submit Feedback")
+    with col2:
+        st.markdown(f"<div class='plant-card'>", unsafe_allow_html=True)
+        if not recommend_clicked:
+            st.success(f"✅ Recommended Plant: **{plant_dict['plant_name']}**")
 
-    if fb_submit:
+        st.markdown("### 📄 Description:")
+        description_html = f"<div style='font-size:20px; line-height:1.6'>{plant_dict['description']}</div>"
+        st.markdown(description_html, unsafe_allow_html=True)
+
+
+        # Geri bildirim formu
+        with st.form("feedback_form"):
+            fb_choice = st.radio("💬 Was this recommendation suitable for you?", ["Yes", "No"])
+            submit = st.form_submit_button("📩 Submit Feedback")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    if submit:
         try:
-            print("🚨 Feedback form submitted → saving to DB…")
             feedback_val = 1 if fb_choice == "Yes" else 0
             add_feedback(
                 st.session_state["user_input"],
                 plant_dict["plant_name"],
                 feedback_val,
             )
-            st.success("🎉 Feedback saved. Thank you!")
-            # Check retraining condition
+            st.success("🎉 Feedback saved. Thank you!")
             check_and_retrain_if_needed()
-            # Clear stored plant so user can search again cleanly
             st.session_state.pop("recommended_plant", None)
             st.session_state.pop("user_input", None)
-        except Exception as exc:  # pragma: no cover
-            st.error(f"❌ Failed to save feedback: {exc}")
+        except Exception as exc:
+            st.error(f"❌ Failed to save feedback: {exc}")

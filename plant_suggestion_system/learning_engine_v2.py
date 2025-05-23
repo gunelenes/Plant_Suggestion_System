@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import pandas as pd
-from mlxtend.frequent_patterns import apriori, association_rules
+from mlxtend.frequent_patterns import fpgrowth, association_rules
+
 
 try:
     import pyodbc
@@ -49,25 +50,24 @@ def sql_connect(conn_str: str | None = None):
 def fetch_feedback_from_db() -> pd.DataFrame:
     conn = sql_connect()
     df = pd.read_sql("SELECT * FROM Feedback", conn)
+
+    # Sadece feedback=1 olan kayıtları al
+    df = df[df["user_feedback"] == 1]
+
+    # Eğer 3000'den fazlaysa örnekle, değilse olduğu gibi al
+    if len(df) > 3000:
+        df = df.sample(3000, random_state=42)
+
     conn.close()
-    logger.info("Fetched %d feedback records from DB.", len(df))
+    logger.info("✅ Fetched %d positive feedback records from DB.", len(df))
     return df
+
 
 # --------------------------------------------------------------
 # Canonical kategorik sütunlar
 # --------------------------------------------------------------
-CAT_COLS: List[str] = [
-    "area_size",
-    "sunlight_need",
-    "environment_type",
-    "climate_type",
-    "watering_frequency",
-    "fertilizer_frequency",
-    "pesticide_frequency",
-    "has_pet",
-    "has_child",
-    "suggested_plant",
-]
+CAT_COLS = ["area_size", "sunlight_need", "environment_type", "watering_frequency"]
+
 
 # --------------------------------------------------------------
 # Yardımcı fonksiyonlar
@@ -110,8 +110,8 @@ def _parse_rules(rules_df: pd.DataFrame, feedback_flag: int) -> List[Dict]:
 def mine_association_rules(
     df: pd.DataFrame,
     *,
-    min_support: float = 0.01,
-    min_confidence: float = 0.3,
+    min_support: float = 0.005,
+    min_confidence: float = 0.1,
     output_path: str = "parsed_rules.json",
 ) -> None:
     parsed: List[Dict] = []
@@ -122,12 +122,12 @@ def mine_association_rules(
             return
         trans = pd.get_dummies(df_sub[CAT_COLS].astype(str))
             # --- Apriori: en fazla 2 koşullu item-set + daha güçlü kural seçimi
-        freq = apriori(
+        freq = fpgrowth(
             trans,
             min_support=min_support,
-            #max_len=2,            # yalnızca 1-2 alanlı koşullar
-            use_colnames=True
+            use_colnames=True,
         )
+
      
         rules = association_rules(
             freq,
@@ -142,7 +142,7 @@ def mine_association_rules(
         ]
 
          # Lift’e göre sırala, ilk 500 kuralı tut
-        rules = rules.sort_values("lift", ascending=False).head(800)
+        rules = rules.sort_values("lift", ascending=False).head(100)
 
         logger.info("feedback=%d → %d rules after filter", flag, len(rules))
         parsed.extend(_parse_rules(rules, flag))

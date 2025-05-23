@@ -4,8 +4,11 @@ import logging
 import joblib
 import pandas as pd
 import pyodbc
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import ColumnTransformer
+import json
+ 
+from xgboost import XGBClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
@@ -63,8 +66,7 @@ def fetch_feedback_data():
 def preprocess_data(df):
     X = df.drop(columns=["user_feedback"])
     y = df["user_feedback"]
-    X_encoded = pd.get_dummies(X)
-    return X_encoded, y
+    return X, y
 
 
 def save_confusion_matrix(y_true, y_pred, filename="confusion_matrix.png"):
@@ -82,8 +84,9 @@ def save_confusion_matrix(y_true, y_pred, filename="confusion_matrix.png"):
     plt.savefig(filename)
     logging.info(f"📊 Confusion matrix saved to {filename}")
 
-
 def main():
+   
+
     # 1. Model klasörü oluştur
     os.makedirs("models", exist_ok=True)
 
@@ -92,36 +95,69 @@ def main():
     logging.info(f"✅ {len(df)} feedback records loaded.")
 
     # 3. Özellikleri ve hedef sütunu ayır
-    X, y = preprocess_data(df)
+    X_raw, y = preprocess_data(df)
 
-    # 4. Eğitim/test ayrımı
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
+    # 4. OneHotEncoder + ColumnTransformer ile encode et
+    categorical_cols = [
+    "area_size", "sunlight_need", "environment_type", "watering_frequency"
+]
+
+    column_transformer = ColumnTransformer(
+        transformers=[
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
+        ]
     )
+    X_encoded = column_transformer.fit_transform(X_raw)
 
-    # 5. Model eğitimi
-    model = DecisionTreeClassifier(max_depth=5, random_state=42)
+    # 5. Eğitim/test ayrımı
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_encoded, y, test_size=0.3, random_state=42, stratify=y
+    )
+    
+    negative_count = sum(y_train == 0)
+    positive_count = sum(y_train == 1)
+    scale_ratio = negative_count / positive_count
+
+    # 6. Model eğitimi (XGBoost)
+    model = XGBClassifier(
+                        max_depth=7,
+                        learning_rate=0.05,
+                        n_estimators=200,
+                        objective='binary:logistic',
+                        eval_metric='logloss',
+                        scale_pos_weight=scale_ratio,  # 🔥 Buraya eklenmeli
+                        random_state=42
+                    )
+
     model.fit(X_train, y_train)
     logging.info("✅ Model training completed.")
 
-    # 6. Tahmin ve değerlendirme
+    # 7. Tahmin ve değerlendirme
     y_pred = model.predict(X_test)
     report_text = classification_report(y_test, y_pred)
     logging.info("📊 Classification report:\n" + report_text)
 
-    # 7. Confusion matrix görseli oluştur
+    # 8. Confusion matrix görseli oluştur
     save_confusion_matrix(y_test, y_pred)
 
-    # 8. Rapor dosyasına yaz
+    # 9. Rapor dosyasına yaz
     with open("last_feedback_model_report.txt", "w", encoding="utf-8") as f:
         f.write(report_text)
     logging.info("📝 Report saved to 'last_feedback_model_report.txt'")
 
-    # 9. Modeli ve özellik listesini kaydet
+    # 10. Modeli ve encode ediciyi kaydet
     joblib.dump(model, "models/feedback_model.pkl")
-    joblib.dump(X.columns.tolist(), "models/feedback_vec.pkl")
+    joblib.dump(column_transformer, "models/feedback_vec.pkl")
     logging.info("💾 Model saved to 'models/feedback_model.pkl'")
     logging.info("💾 Features saved to 'models/feedback_vec.pkl'")
+
+    # 11. Özellik adlarını JSON dosyasına kaydet
+    with open("models/feature_names.json", "w") as f:
+        feature_names = column_transformer.get_feature_names_out()
+        json.dump(feature_names.tolist(), f)
+    logging.info("🧠 Feature names saved to 'feature_names.json'")
+    print(df["user_feedback"].value_counts())
+
 
 if __name__ == "__main__":
     main()

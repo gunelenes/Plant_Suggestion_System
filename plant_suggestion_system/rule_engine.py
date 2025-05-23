@@ -42,9 +42,15 @@ class Rule:
     lift: float = 1.0
     support: float = 0.0
 
-    def matches(self, user_input: Dict[str, str]) -> bool:
-        """Return True if *all* condition key/values exist in the user input."""
-        return self.conditions.items() <= user_input.items()
+    def matches(self, user_input: Dict[str, str], exact: bool = False) -> bool:
+ 
+        rule_items = self.conditions.items()
+        user_items = user_input.items()
+
+        if exact:
+            return rule_items == user_items  # birebir aynı olmalı
+        return rule_items <= user_items  # subset (içeriyor mu)
+
 
 
 class KnowledgeBase:
@@ -94,46 +100,52 @@ class RuleEngine:
     # ----------------------------------------------------------
     # Public API
     # ----------------------------------------------------------
+    from typing import Dict, List
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     def get_candidates(self, user_input: Dict[str, str], top_n: int = 5) -> List[str]:
         """Return up to *top_n* plant names matching the rule logic."""
 
-        # Step 1 – hard negative veto
-        #if self._is_forbidden(user_input):
-         #   logger.info("❌ User input hit a negative veto – no suggestions.")
-          #  return []
+        # Step 1 – hard negative veto (şimdilik devre dışı)
+        # if self._is_forbidden(user_input):
+        #     logger.info("❌ User input hit a negative veto – no suggestions.")
+        #     return []
 
-        # Step 2 – exact positive match first (highest precision)
+        # Step 2 – exact positive match first (highest precision)
         for rule in self.kb.positive_rules:
-            if rule.matches(user_input):
+            if rule.matches(user_input, exact=True):  # Eğer exact match kontrolü varsa
                 logger.info("✅ Exact positive rule match → %s", rule.suggested_plant)
                 return [rule.suggested_plant]
 
-        # Step 3 – collect partial positive matches (recall)
+        # Step 3 – collect partial positive matches (recall)
         matches = []
         for rule in self.kb.positive_rules:
             if rule.matches(user_input):
                 matches.append(rule)
 
-        # ⚠ confidence + lift'e göre sırala
-        matches.sort(key=lambda r: (r.confidence, r.lift), reverse=True)
+        # Güvenilirliğe göre sırala: confidence ve lift yüksek olanlar öne alınır
+        matches.sort(key=lambda r: (getattr(r, 'confidence', 0), getattr(r, 'lift', 0)), reverse=True)
 
-        # ⚠ aynı bitkiden tekrar olmaması için öneri listesi oluştur
+        # Aynı bitki tekrar etmesin
         candidates = []
         seen = set()
         for rule in matches:
-            if rule.suggested_plant not in seen:
-                candidates.append(rule.suggested_plant)
-                seen.add(rule.suggested_plant)
+            plant_name = getattr(rule, 'suggested_plant', None)
+            if plant_name and plant_name not in seen:
+                candidates.append(plant_name)
+                seen.add(plant_name)
             if len(candidates) >= top_n:
                 break
 
+        # Step 4 – meta-rules (eğer varsa etkili olsun)
+        if hasattr(self, '_apply_meta_rules'):
+            self._apply_meta_rules(user_input, candidates, top_n)
 
-        # Step 4 – meta‑rules (frames)
-        self._apply_meta_rules(user_input, candidates, top_n)
-
-        # Step 5 – fill‑up from the full plant list if still < top_n
-        if len(candidates) < top_n:
-            for plant in self.plants_df["plant_name"].unique():
+        # Step 5 – yetersizse genel bitki listesinden tamamla
+        if len(candidates) < top_n and hasattr(self, 'plants_df'):
+            for plant in self.plants_df["plant_name"].dropna().unique():
                 if plant not in candidates:
                     candidates.append(plant)
                 if len(candidates) >= top_n:
